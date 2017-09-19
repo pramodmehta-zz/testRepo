@@ -6822,6 +6822,72 @@ END_QUERY;
 		return $out;
 	}
 
+	private function updateEmailData($email) {
+		$db=$this->dbh;
+		$out=0;
+		$updateCred=0;
+		$tag=strpos($email,'<');
+		$endtag=strpos($email,'>');
+		if($tag) { $email=substr(trim($email, '>'), $tag+1, ($endtag-1)); }
+		$ivtMail=mysql_escape_string($email);
+
+		$sql="select CM_Email, CM_Deliverable from CredentialManager where CM_Email='$ivtMail'";
+		$res=mysql_query($sql, $db);
+		list($cmEmail, $cmDeliverable)=mysql_fetch_array($res);
+		mysql_free_result($res);
+		if(!isset($cmEmail) || $cmDeliverable==NULL) {
+			if (filter_var($ivtMail, FILTER_VALIDATE_EMAIL)) {
+				if (!$this->timeOut){ // if timeOut then dont validate the email
+					$valid = $this->checkEmailValid($ivtMail);
+					if($valid>=1 && $valid<=5) { // API response 1-5
+						$sql="update CredentialManager set CM_Deliverable=1 where"." CM_Email='$ivtMail'";
+						mysql_query($sql, $db);
+						$out=1;
+					}elseif($valid==28) { // API timeOut
+						$out=1;
+					}else{ // API response Invalid=6
+						$updateCred=1;
+					}
+				}else{
+					$out=1;
+				}
+			}else{
+				$updateCred=1;
+			}
+		}else{
+			$out=$cmDeliverable;
+		}
+		if ($updateCred){
+			$sql="update CredentialManager set CM_Deliverable=0 where". " CM_Email='$ivtMail'";
+			mysql_query($sql, $db);
+		}
+		return $out;
+	}
+
+	private function checkEmailValid($email) {
+		$out=0;
+		$apiKey='4OApawhi3oAdX7HZYmZ3raEjY'; // api key
+		$apiUrl='https://api.hubuco.com/api/v3/?api='.$apiKey.'&email='.$email; // api url
+		$curl=curl_init();
+		curl_setopt_array($curl, array(
+		CURLOPT_RETURNTRANSFER => 1,
+		CURLOPT_URL => $apiUrl,
+		CURLOPT_TIMEOUT => 5,
+		));
+		$res=curl_exec($curl);
+		$errno=curl_errno($curl);
+		if($res){
+			$result=json_decode($res, true);
+			$out=$result['resultcode'];
+		} elseif($errno==28) { // API timeOut
+			$out=$errno;
+			$this->timeOut=true;
+			$trace=curl_error($curl);
+			$this->log2file($this->s_ServiceClass, "Timeout $trace");
+		}
+		return $out;
+	}
+
 	private function getRegPageStyle($acct, $alid, $lgid) {
 		$db=$this->dbh;
 		$out=0;
